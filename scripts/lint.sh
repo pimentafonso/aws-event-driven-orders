@@ -1,0 +1,46 @@
+#!/usr/bin/env bash
+# Format-check, validate, lint and security-scan the Terraform, then scan the
+# GitHub Actions workflows and lint the Python and shell code.
+set -euo pipefail
+cd "$(dirname "$0")/.."
+
+# Run a linter if it is installed. Locally a missing tool is skipped with a
+# warning; in CI it is an error, so nothing is skipped silently.
+need() {
+  if command -v "$1" >/dev/null 2>&1; then
+    return 0
+  elif [ "${CI:-}" = true ]; then
+    echo "$1 not found" >&2
+    exit 1
+  else
+    echo "$1 not found: skipping it" >&2
+    return 1
+  fi
+}
+
+if need terraform; then
+  terraform fmt -check -recursive -diff infra
+  for env in infra/envs/*/; do
+    terraform -chdir="$env" init -backend=false -input=false >/dev/null
+    terraform -chdir="$env" validate
+  done
+fi
+
+if need tflint; then
+  tflint --init
+  tflint --recursive --chdir=infra
+fi
+
+if need checkov; then
+  checkov --quiet --framework terraform -d infra
+  checkov --quiet --framework github_actions -d .github/workflows
+fi
+
+if need ruff; then
+  ruff check .
+  ruff format --check .
+fi
+
+if need shellcheck; then
+  shellcheck -x scripts/*.sh
+fi
