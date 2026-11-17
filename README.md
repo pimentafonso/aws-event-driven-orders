@@ -2,8 +2,8 @@
 
 Event-driven order processing on AWS serverless, built with Terraform.
 
-> **Status:** work in progress (M0, repository bootstrap). Nothing is deployed yet,
-> so this README has no results. Every number added later will be measured.
+> **Status:** work in progress (M1, Terraform foundation). No application is deployed
+> yet, so this README has no results. Every number added later will be measured.
 
 ## What it will do
 
@@ -36,8 +36,8 @@ steps when one fails. The focus is on the failure paths that tutorials skip:
 
 | | Milestone | Status |
 |---|---|---|
-| M0 | Repository bootstrap: layout, ADRs, lint and security scans in CI | in progress |
-| M1 | Terraform foundation: S3 state, OIDC deploy role, plan on pull requests | planned |
+| M0 | Repository bootstrap: layout, ADRs, lint and security scans in CI | done |
+| M1 | Terraform foundation: S3 state, OIDC deploy role, plan on pull requests | in progress |
 | M2 | Synchronous API with idempotency | planned |
 | M3 | Event flow and saga | planned |
 | M4 | Fault injection, integration tests, observability | planned |
@@ -46,10 +46,11 @@ steps when one fails. The focus is on the failure paths that tutorials skip:
 ## Repository layout
 
 ```
-infra/envs/<env>/   Terraform root module per environment
+infra/account/      GitHub roles and permissions boundary (applied by an admin)
+infra/envs/<env>/   Terraform root module per environment (applied by CI)
 infra/modules/      reusable Terraform modules (from M2)
 docs/adr/           architecture decision records
-scripts/            lint and (from M1) bootstrap, deploy and destroy scripts
+scripts/            lint, state bootstrap, account apply and destroy
 ```
 
 ## Running the checks locally
@@ -64,10 +65,30 @@ bash scripts/lint.sh
 Locally, a missing linter is skipped with a warning. In CI every linter is
 required.
 
+## Deploying
+
+Needs the AWS CLI and an administrator profile for the one-off steps.
+
+```bash
+export AWS_PROFILE=<admin profile>
+bash scripts/bootstrap-state.sh   # once per account: the state bucket
+bash scripts/account.sh apply     # GitHub roles and permissions boundary
+```
+
+After that, GitHub Actions does the rest: every pull request that touches
+`infra/` gets a plan summary as a comment, and merging to `main` applies dev
+through the `dev` environment. The repository needs one secret,
+`AWS_ACCOUNT_ID`.
+
+To remove everything: `bash scripts/destroy.sh --all` (dev, the account module,
+then the state bucket with every version in it). Without `--all` it removes dev
+only.
+
 ## Decisions
 
 - [ADR 1: Terraform for infrastructure](docs/adr/0001-terraform-for-infrastructure.md)
 - [ADR 2: Python for the Lambda handlers](docs/adr/0002-python-lambda-handlers.md)
+- [ADR 3: Terraform state and GitHub access to AWS](docs/adr/0003-state-and-github-access.md)
 
 ## Licence
 
