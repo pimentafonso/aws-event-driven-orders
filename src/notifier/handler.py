@@ -1,0 +1,86 @@
+"""SQS consumer for OrderConfirmed events.
+
+Each message body is an EventBridge event. The consumer records a NOTIFICATION
+item per order with a conditional write, so a duplicate delivery is detected
+and skipped instead of notifying the customer twice.
+
+Failures are reported per message (partial batch response): one bad message is
+retried on its own, and after three receives SQS moves it to the dead-letter
+queue, while the rest of the batch succeeds.
+"""
+
+from __future__ import annotations
+
+import json
+import os
+from datetime import UTC, datetime
+from typing import Any
+
+import boto3
+from aws_lambda_powertools import Logger, Metrics, Tracer
+from aws_lambda_powertools.metrics import MetricUnit
+from aws_lambda_powertools.utilities.batch import (
+    BatchProcessor,
+    EventType,
+    process_partial_response,
+)
+from aws_lambda_powertools.utilities.data_classes.sqs_event import SQSRecord
+from aws_lambda_powertools.utilities.typing import LambdaContext
+from botocore.exceptions import ClientError
+
+logger = Logger()
+tracer = Tracer()
+metrics = Metrics()
+processor = BatchProcessor(event_type=EventType.SQS)
+
+table = boto3.resource("dynamodb").Table(os.environ["ORDERS_TABLE"])
+
+
+class InvalidMessageError(ValueError):
+    """The message is not an OrderConfirmed event."""
+
+
+def parse(body: str) -> dict[str, str]:
+    try:
+        event = json.loads(body)
+        detail = event["detail"]
+        order_id, customer_id = detail["order_id"], detail["customer_id"]
+    except (ValueError, KeyError, TypeError) as err:
+        raise InvalidMessageError("not an OrderConfirmed event") from err
+    if event.get("detail-type") != "OrderConfirmed":
+        raise InvalidMessageError(f"unexpected detail-type {event.get('detail-type')!r}")
+    return {"order_id": str(order_id), "customer_id": str(customer_id)}
+
+
+@tracer.capture_method
+def record_handler(record: SQSRecord) -> None:
+    message = parse(record.body)
+    try:
+        table.put_item(
+            Item={
+                "pk": f"ORDER#{message['order_id']}",
+                "sk": "NOTIFICATION",
+                "customer_id": message["customer_id"],
+                "channel": "email (simulated)",
+                "sent_at": datetime.now(UTC).isoformat(timespec="milliseconds"),
+                "message_id": record.message_id,
+            },
+            ConditionExpression="attribute_not_exists(pk)",
+        )
+    except ClientError as err:
+        if err.response["Error"]["Code"] != "ConditionalCheckFailedException":
+            raise
+        logger.info("duplicate delivery skipped", extra=message)
+        metrics.add_metric(name="DuplicateNotificationsSkipped", unit=MetricUnit.Count, value=1)
+        return
+    logger.info("notification sent", extra=message)
+    metrics.add_metric(name="NotificationsSent", unit=MetricUnit.Count, value=1)
+
+
+@logger.inject_lambda_context
+@tracer.capture_lambda_handler
+@metrics.log_metrics
+def lambda_handler(event: dict[str, Any], context: LambdaContext) -> dict[str, Any]:
+    return process_partial_response(
+        event=event, record_handler=record_handler, processor=processor, context=context
+    )
