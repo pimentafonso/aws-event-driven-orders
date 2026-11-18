@@ -32,16 +32,25 @@ from aws_lambda_powertools.utilities.data_classes.sqs_event import SQSRecord
 from aws_lambda_powertools.utilities.typing import LambdaContext
 from botocore.exceptions import ClientError
 
+import faults
+
 logger = Logger()
 tracer = Tracer()
 metrics = Metrics()
-processor = BatchProcessor(event_type=EventType.SQS)
+# Report every failed message, even when the whole batch failed, instead of
+# failing the invocation: the dead-letter queue handles bad messages, and the
+# notifier-errors alarm is kept for failures of the function itself.
+processor = BatchProcessor(event_type=EventType.SQS, raise_on_entire_batch_failure=False)
 
 table = boto3.resource("dynamodb").Table(os.environ["ORDERS_TABLE"])
 
 
 class InvalidMessageError(ValueError):
     """The message is not an OrderConfirmed event."""
+
+
+class InjectedFailureError(RuntimeError):
+    """A failure injected through the fault switch (faults.py)."""
 
 
 def parse(body: str) -> dict[str, str]:
@@ -86,6 +95,8 @@ def timings(record: SQSRecord, event_time: str, now: datetime) -> dict[str, int]
 @tracer.capture_method
 def record_handler(record: SQSRecord) -> None:
     message = parse(record.body)
+    if faults.should_fail(faults.NOTIFIER_FAILURE):
+        raise InjectedFailureError("notification failed (injected)")
     now = datetime.now(UTC)
     hops = timings(record, message.pop("event_time"), now)
     try:
@@ -97,6 +108,7 @@ def record_handler(record: SQSRecord) -> None:
                 "channel": "email (simulated)",
                 "sent_at": now.isoformat(timespec="milliseconds"),
                 "message_id": record.message_id,
+                "receive_count": int(record.attributes.approximate_receive_count),
                 "timings": hops,
             },
             ConditionExpression="attribute_not_exists(pk)",
