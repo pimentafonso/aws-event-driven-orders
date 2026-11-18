@@ -2,8 +2,8 @@
 
 Event-driven order processing on AWS serverless, built with Terraform.
 
-> **Status:** work in progress (M3, event flow and saga). No load test has run yet, so this
-> README has no performance results. Every number added later will be measured.
+> **Status:** work in progress (M4, resilience and observability). No load test has run yet,
+> so this README has no performance results. Every number added later will be measured.
 
 ## What it will do
 
@@ -39,8 +39,8 @@ steps when one fails. The focus is on the failure paths that tutorials skip:
 | M0 | Repository bootstrap: layout, ADRs, lint and security scans in CI | done |
 | M1 | Terraform foundation: S3 state, OIDC deploy role, plan on pull requests | done |
 | M2 | Synchronous API with idempotency | done |
-| M3 | Event flow and saga | in progress |
-| M4 | Fault injection, integration tests, observability | planned |
+| M3 | Event flow and saga | done |
+| M4 | Fault injection, integration tests, observability | in progress |
 | M5 | Load test, measured cost, final write-up | planned |
 
 ## The API
@@ -72,17 +72,39 @@ Both routes need a SigV4-signed request (IAM authorisation, see ADR 4).
 
 Every step is idempotent, so retries and duplicate events are safe (ADR 5).
 
+## When something fails
+
+| Failure | Where it ends up |
+|---|---|
+| A notification fails three times | `aedo-dev-notifications-dlq`; `scripts/redrive_dlq.sh` moves it back |
+| The pipe or a rule cannot deliver an event | `aedo-dev-events-dlq`, instead of being dropped |
+| A saga step fails | retried by Step Functions; a failed execution can be redriven from the failed step |
+
+Eight CloudWatch alarms watch these paths (dead-letter queues, notification
+backlog, failed executions, pipe failures, API 5xx, notifier errors, Lambda
+throttles), and the `aedo-dev-orders` dashboard follows an order from the API
+to its notification. The [runbook](docs/runbook.md) says what to do for each
+alarm.
+
+The alarms notify the SNS topic `aedo-dev-alarms`. Subscribe an address by
+hand, so it never goes into the repository or the Terraform state:
+
+```bash
+aws sns subscribe --region eu-west-1 --protocol email --notification-endpoint <address>   --topic-arn "$(terraform -chdir=infra/envs/dev output -raw alarm_topic_arn)"
+```
+
 ## Repository layout
 
 ```
 infra/account/      GitHub roles and permissions boundary (applied by an admin)
 infra/envs/<env>/   Terraform root module per environment (applied by CI)
-infra/modules/      Terraform modules: data, api, events, function
+infra/modules/      Terraform modules: data, api, events, function, observability
 src/orders_api/     API handler (Python 3.13, Powertools)
 src/saga/           saga steps called by Step Functions
 src/notifier/       SQS consumer for OrderConfirmed
 tests/unit/         unit tests: the real handler against DynamoDB mocked by moto
 docs/adr/           architecture decision records
+docs/runbook.md     what to do when each alarm fires
 scripts/            lint, state bootstrap, account apply and destroy
 ```
 
@@ -140,6 +162,7 @@ only.
 - [ADR 3: Terraform state and GitHub access to AWS](docs/adr/0003-state-and-github-access.md)
 - [ADR 4: IAM authorisation on the HTTP API](docs/adr/0004-iam-auth-on-the-api.md)
 - [ADR 5: Event flow and order saga](docs/adr/0005-event-flow-and-saga.md)
+- [ADR 6: Alarms, dashboard and dead-letter queues](docs/adr/0006-alarms-and-dead-letters.md)
 
 ## Licence
 

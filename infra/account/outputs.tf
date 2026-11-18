@@ -12,3 +12,8 @@ output "workload_boundary_arn" {
   description = "Permissions boundary every workload role must carry."
   value       = aws_iam_policy.workload_boundary.arn
 }
+
+output "dev_test_role_arn" {
+  description = "Role that the GitHub dev environment assumes to run the end-to-end test."
+  value       = aws_iam_role.github_dev_test.arn
+}

@@ -74,6 +74,10 @@ resource "aws_cloudwatch_event_target" "notifications" {
     maximum_event_age_in_seconds = 3600
     maximum_retry_attempts       = 10
   }
+
+  dead_letter_config {
+    arn = aws_sqs_queue.events_dlq.arn
+  }
 }
 
 # -----------------------------------------------------------------------------

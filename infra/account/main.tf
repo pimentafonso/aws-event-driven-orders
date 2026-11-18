@@ -113,6 +113,13 @@ data "aws_iam_policy_document" "workload_boundary" {
   }
 
   statement {
+    sid     = "OwnParameters"
+    actions = ["ssm:GetParameter"]
+    # The fault-injection switch, /<prefix>-<env>/faults (M4).
+    resources = ["arn:${local.partition}:ssm:${local.region}:${local.account_id}:parameter/${var.prefix}-*"]
+  }
+
+  statement {
     sid       = "OwnFunctions"
     actions   = ["lambda:InvokeFunction"]
     resources = ["arn:${local.partition}:lambda:${local.region}:${local.account_id}:function:${var.prefix}-*"]
@@ -153,9 +160,6 @@ data "aws_iam_policy_document" "github_guardrails" {
     effect = "Deny"
     actions = [
       "secretsmanager:GetSecretValue",
-      "ssm:GetParameter",
-      "ssm:GetParameters",
-      "ssm:GetParametersByPath",
       "dynamodb:GetItem",
       "dynamodb:BatchGetItem",
       "dynamodb:Query",
@@ -169,6 +173,19 @@ data "aws_iam_policy_document" "github_guardrails" {
       "logs:GetQueryResults",
     ]
     resources = ["*"]
+  }
+
+  statement {
+    sid    = "NoParameterReadsButTheFaultSwitch"
+    effect = "Deny"
+    # Terraform refreshes the fault-injection switch, which holds two rates
+    # and nothing secret. Every other parameter stays unreadable.
+    actions = [
+      "ssm:GetParameter",
+      "ssm:GetParameters",
+      "ssm:GetParametersByPath",
+    ]
+    not_resources = ["arn:${local.partition}:ssm:${local.region}:${local.account_id}:parameter/${var.prefix}-*/faults"]
   }
 
   statement {
@@ -540,6 +557,49 @@ data "aws_iam_policy_document" "dev_deploy" {
     }
   }
 
+  # --- M4: observability and fault injection ---------------------------------
+
+  statement {
+    sid = "DevAlarms"
+    actions = [
+      "cloudwatch:PutMetricAlarm",
+      "cloudwatch:DeleteAlarms",
+      "cloudwatch:TagResource",
+      "cloudwatch:UntagResource",
+    ]
+    resources = ["arn:${local.partition}:cloudwatch:${local.region}:${local.account_id}:alarm:${var.prefix}-dev-*"]
+  }
+
+  statement {
+    sid     = "DevDashboards"
+    actions = ["cloudwatch:PutDashboard", "cloudwatch:DeleteDashboards"]
+    # Dashboard ARNs have no Region.
+    resources = ["arn:${local.partition}:cloudwatch::${local.account_id}:dashboard/${var.prefix}-dev-*"]
+  }
+
+  statement {
+    sid = "DevTopics"
+    actions = [
+      "sns:CreateTopic",
+      "sns:DeleteTopic",
+      "sns:SetTopicAttributes",
+      "sns:TagResource",
+      "sns:UntagResource",
+    ]
+    resources = ["arn:${local.partition}:sns:${local.region}:${local.account_id}:${var.prefix}-dev-*"]
+  }
+
+  statement {
+    sid = "DevParameters"
+    actions = [
+      "ssm:PutParameter",
+      "ssm:DeleteParameter",
+      "ssm:AddTagsToResource",
+      "ssm:RemoveTagsFromResource",
+    ]
+    resources = ["arn:${local.partition}:ssm:${local.region}:${local.account_id}:parameter/${var.prefix}-dev/*"]
+  }
+
   statement {
     sid    = "KeepTheBoundary"
     effect = "Deny"
@@ -568,4 +628,52 @@ resource "aws_iam_role_policy_attachment" "dev_deploy_read_only" {
 resource "aws_iam_role_policy_attachment" "dev_deploy_guardrails" {
   role       = aws_iam_role.github_dev_deploy.name
   policy_arn = aws_iam_policy.github_guardrails.arn
+}
+
+# -----------------------------------------------------------------------------
+# Dev test role: the job that runs the end-to-end test after each deploy (M4).
+# It can call the API, read orders and set stock for test products, but it
+# cannot change any infrastructure.
+# -----------------------------------------------------------------------------
+resource "aws_iam_role" "github_dev_test" {
+  name                 = "${var.prefix}-github-dev-test"
+  description          = "GitHub Actions runs the end-to-end test against dev with this role (OIDC, no stored keys)"
+  assume_role_policy   = data.aws_iam_policy_document.dev_deploy_trust.json
+  max_session_duration = 3600
+}
+
+data "aws_iam_policy_document" "dev_test" {
+  statement {
+    sid     = "CallTheOrdersApi"
+    actions = ["execute-api:Invoke"]
+    # HTTP API IDs are generated; the stage and routes pin these to the
+    # orders API's two routes.
+    resources = [
+      "arn:${local.partition}:execute-api:${local.region}:${local.account_id}:*/$default/POST/orders",
+      "arn:${local.partition}:execute-api:${local.region}:${local.account_id}:*/$default/GET/orders/*",
+    ]
+  }
+
+  statement {
+    sid       = "ReadOrders"
+    actions   = ["dynamodb:GetItem"]
+    resources = ["arn:${local.partition}:dynamodb:${local.region}:${local.account_id}:table/${var.prefix}-dev-orders"]
+  }
+
+  statement {
+    sid       = "SetStock"
+    actions   = ["dynamodb:PutItem"]
+    resources = ["arn:${local.partition}:dynamodb:${local.region}:${local.account_id}:table/${var.prefix}-dev-orders"]
+    condition {
+      test     = "ForAllValues:StringLike"
+      variable = "dynamodb:LeadingKeys"
+      values   = ["PRODUCT#*"]
+    }
+  }
+}
+
+resource "aws_iam_role_policy" "dev_test" {
+  name   = "dev-test"
+  role   = aws_iam_role.github_dev_test.id
+  policy = data.aws_iam_policy_document.dev_test.json
 }

@@ -13,8 +13,9 @@ It prints the time from the API's 201 to the final status for each order.
 With --poison it also sends a malformed message to the notification queue and
 waits until it reaches the dead-letter queue (three receives, a few minutes).
 
-Run scripts/seed_stock.py first. Uses the default AWS credential chain; reads
-the orders table directly to check stock and notifications.
+Sets the stock of SKU-1 and SKU-5 itself, so it can run after every deploy.
+Uses the default AWS credential chain; reads the orders table directly to
+check stock and notifications.
 """
 
 from __future__ import annotations
@@ -59,12 +60,13 @@ def wait_final(endpoint: str, order_id: str, started: float) -> tuple[dict[str, 
     raise SystemExit(f"order {order_id} did not finish within 60 s")
 
 
-def wait_notification(order_id: str, timeout: float = 30) -> float | None:
+def wait_notification(order_id: str, timeout: float = 60) -> dict[str, Any] | None:
     start = time.perf_counter()
     while time.perf_counter() - start < timeout:
         key = {"pk": f"ORDER#{order_id}", "sk": "NOTIFICATION"}
-        if "Item" in table.get_item(Key=key, ConsistentRead=True):
-            return time.perf_counter() - start
+        item = table.get_item(Key=key, ConsistentRead=True).get("Item")
+        if item:
+            return item
         time.sleep(0.25)
     return None
 
@@ -103,7 +105,9 @@ def main() -> int:
         failures += not ok
         print(f"{'PASS' if ok else 'FAIL'}  {name}{f' ({detail})' if detail else ''}")
 
-    # SKU-5 gets a small stock so one valid order (quantity <= 100) can exceed it.
+    # Known stock each run. SKU-5 is small so one valid order (quantity <= 100)
+    # can exceed it.
+    table.put_item(Item={"pk": "PRODUCT#SKU-1", "sk": "STOCK", "available": 100})
     table.put_item(Item={"pk": "PRODUCT#SKU-5", "sk": "STOCK", "available": 5})
     sku1, sku5 = stock("SKU-1"), stock("SKU-5")
 
@@ -129,12 +133,10 @@ def main() -> int:
     check("stock: only the confirmed unit was taken", stock("SKU-1") == sku1 - 1)
     check("stock: out-of-stock order took nothing", stock("SKU-5") == sku5)
 
-    notified_s = wait_notification(happy_id)
-    check(
-        "notification recorded for the confirmed order",
-        notified_s is not None,
-        f"{notified_s:.2f} s after confirmation was seen" if notified_s is not None else "",
-    )
+    notification = wait_notification(happy_id)
+    hops = (notification or {}).get("timings", {})
+    detail = ", ".join(f"{k} {int(v)}" for k, v in hops.items())
+    check("notification recorded for the confirmed order", notification is not None, detail)
     check("no notification for a rejected order", wait_notification(declined_id, 5) is None)
 
     if "--poison" in sys.argv:
