@@ -112,3 +112,24 @@ def test_get_unknown_order_is_404(app: Any, tables: Any, order_id: str) -> None:
     status, _, _ = call(app, http_event("GET", f"/orders/{order_id}"))
 
     assert status == 404
+
+
+def test_get_shows_the_rejection_reason(app: Any, tables: Any) -> None:
+    _, created, _ = post(app, ORDER)
+    tables["orders"].update_item(
+        Key={"pk": f"ORDER#{created['order_id']}", "sk": "ORDER"},
+        UpdateExpression="SET #s = :s, reason = :r",
+        ExpressionAttributeNames={"#s": "status"},
+        ExpressionAttributeValues={":s": "REJECTED", ":r": "OUT_OF_STOCK"},
+    )
+
+    _, body, _ = call(app, http_event("GET", f"/orders/{created['order_id']}"))
+
+    assert (body["status"], body["reason"]) == ("REJECTED", "OUT_OF_STOCK")
+
+
+def test_order_id_is_stored_for_the_stream(app: Any, tables: Any) -> None:
+    _, created, _ = post(app, ORDER)
+
+    item = tables["orders"].scan()["Items"][0]
+    assert item["order_id"] == created["order_id"]
