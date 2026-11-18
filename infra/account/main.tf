@@ -349,6 +349,98 @@ data "aws_iam_policy_document" "dev_deploy" {
     }
   }
 
+  # --- M2: synchronous API (DynamoDB, Lambda, HTTP API, logs) ---------------
+
+  statement {
+    sid = "DevTables"
+    actions = [
+      "dynamodb:CreateTable",
+      "dynamodb:DeleteTable",
+      "dynamodb:UpdateTable",
+      "dynamodb:UpdateTimeToLive",
+      "dynamodb:UpdateContinuousBackups",
+      "dynamodb:TagResource",
+      "dynamodb:UntagResource",
+    ]
+    resources = ["arn:${local.partition}:dynamodb:${local.region}:${local.account_id}:table/${var.prefix}-dev-*"]
+  }
+
+  statement {
+    sid = "DevFunctions"
+    actions = [
+      "lambda:CreateFunction",
+      "lambda:DeleteFunction",
+      "lambda:UpdateFunctionCode",
+      "lambda:UpdateFunctionConfiguration",
+      "lambda:AddPermission",
+      "lambda:RemovePermission",
+      "lambda:TagResource",
+      "lambda:UntagResource",
+    ]
+    resources = ["arn:${local.partition}:lambda:${local.region}:${local.account_id}:function:${var.prefix}-dev-*"]
+  }
+
+  statement {
+    sid       = "PowertoolsLayer"
+    actions   = ["lambda:GetLayerVersion"]
+    resources = ["arn:${local.partition}:lambda:${local.region}:017000801446:layer:AWSLambdaPowertoolsPythonV3-*"]
+  }
+
+  statement {
+    sid = "HttpApis"
+    # HTTP API ARNs hold a generated ID, not a name, so this cannot be scoped
+    # to aedo-dev-*. The account has no other HTTP APIs in this Region.
+    actions = [
+      "apigateway:GET",
+      "apigateway:POST",
+      "apigateway:PUT",
+      "apigateway:PATCH",
+      "apigateway:DELETE",
+      "apigateway:TagResource",
+      "apigateway:UntagResource",
+    ]
+    resources = [
+      "arn:${local.partition}:apigateway:${local.region}::/apis",
+      "arn:${local.partition}:apigateway:${local.region}::/apis/*",
+      "arn:${local.partition}:apigateway:${local.region}::/tags/*",
+    ]
+  }
+
+  statement {
+    sid = "DevLogGroups"
+    actions = [
+      "logs:CreateLogGroup",
+      "logs:DeleteLogGroup",
+      "logs:PutRetentionPolicy",
+      "logs:DeleteRetentionPolicy",
+      "logs:TagResource",
+      "logs:UntagResource",
+      "logs:TagLogGroup",
+      "logs:UntagLogGroup",
+    ]
+    resources = [
+      "arn:${local.partition}:logs:${local.region}:${local.account_id}:log-group:/aws/lambda/${var.prefix}-dev-*",
+      "arn:${local.partition}:logs:${local.region}:${local.account_id}:log-group:/aedo/${var.prefix}-dev/*",
+    ]
+  }
+
+  statement {
+    sid = "ApiAccessLogDelivery"
+    # Needed by the caller that turns on HTTP API access logging. These
+    # actions do not support resource-level permissions.
+    actions = [
+      "logs:CreateLogDelivery",
+      "logs:GetLogDelivery",
+      "logs:UpdateLogDelivery",
+      "logs:DeleteLogDelivery",
+      "logs:ListLogDeliveries",
+      "logs:PutResourcePolicy",
+      "logs:DescribeResourcePolicies",
+      "logs:DescribeLogGroups",
+    ]
+    resources = ["*"]
+  }
+
   statement {
     sid    = "KeepTheBoundary"
     effect = "Deny"
