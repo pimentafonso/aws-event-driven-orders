@@ -58,12 +58,25 @@ def get(pk: str, sk: str) -> dict[str, Any] | None:
     return table.get_item(Key={"pk": pk, "sk": sk}, ConsistentRead=True).get("Item")
 
 
-def dlq_depth(url: str) -> int:
-    attrs = sqs.get_queue_attributes(
-        QueueUrl=url,
-        AttributeNames=["ApproximateNumberOfMessages", "ApproximateNumberOfMessagesNotVisible"],
-    )["Attributes"]
-    return sum(int(v) for v in attrs.values())
+def dlq_order_ids(url: str) -> set[str]:
+    """Order IDs of the OrderConfirmed events in the dead-letter queue.
+
+    Counts from the messages themselves: SQS's message counts are approximate
+    and can lag by minutes. Each read hides what it returned for 2 seconds, so
+    the next read returns other messages; nothing consumes this queue, so they
+    stay ready for a redrive. Long polling makes each call query every server.
+    """
+    found: set[str] = set()
+    for _ in range(3):
+        response = sqs.receive_message(
+            QueueUrl=url, MaxNumberOfMessages=10, VisibilityTimeout=2, WaitTimeSeconds=1
+        )
+        for message in response.get("Messages", []):
+            try:
+                found.add(str(json.loads(message["Body"])["detail"]["order_id"]))
+            except (ValueError, KeyError, TypeError):
+                continue  # not an OrderConfirmed event
+    return found
 
 
 def place_orders(endpoint: str, count: int) -> list[str]:
@@ -137,7 +150,6 @@ def main() -> int:
         print(f"{'PASS' if ok else 'FAIL'}  {name}{f' ({detail})' if detail else ''}")
 
     table.put_item(Item={"pk": f"PRODUCT#{SKU}", "sk": "STOCK", "available": START_STOCK})
-    dlq_before = dlq_depth(dlq_url)
     print(
         f"Fault switch: payment unavailable {args.payment_rate:.0%}, "
         f"notifier failure {args.notifier_rate:.0%}; {args.orders} orders"
@@ -180,22 +192,23 @@ def main() -> int:
         # timeout, so the last ones can take about three minutes.
         deadline = time.monotonic() + 360
         notified: dict[str, dict[str, Any]] = {}
+        dead: set[str] = set()
         while time.monotonic() < deadline:
             for order_id in confirmed:
                 if order_id not in notified:
                     item = get(f"ORDER#{order_id}", "NOTIFICATION")
                     if item:
                         notified[order_id] = item
-            dead = dlq_depth(dlq_url) - dlq_before
-            if len(notified) + dead >= len(confirmed):
+            dead = dlq_order_ids(dlq_url) & set(confirmed)
+            if len(notified) + len(dead) >= len(confirmed):
                 break
             time.sleep(10)
-        dead = dlq_depth(dlq_url) - dlq_before
+        print(f"      notifications settled after {time.monotonic() - started:.0f} s")
         receives = Counter(int(n.get("receive_count", 1)) for n in notified.values())
         check(
-            "every confirmed order notified or dead-lettered",
-            len(notified) + dead == len(confirmed),
-            f"{len(notified)} notified, {dead} in the DLQ",
+            "every confirmed order notified or dead-lettered, never both",
+            set(notified) | dead == set(confirmed) and not set(notified) & dead,
+            f"{len(notified)} notified, {len(dead)} in the DLQ",
         )
         print(
             "      notifications by receive count: "
