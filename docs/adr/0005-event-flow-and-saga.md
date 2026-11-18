@@ -1,6 +1,6 @@
 # 5. Event flow and order saga
 
-- Status: accepted
+- Status: accepted; the concurrency limits are superseded by [ADR 8](0008-load-test-and-concurrency.md)
 - Date: 2026-11-18
 
 ## Context

@@ -2,10 +2,10 @@
 
 Event-driven order processing on AWS serverless, built with Terraform.
 
-> **Status:** work in progress (M5, load test and cost). The numbers below come from
-> functional and fault-injection runs on AWS, not from a load test. Every number is measured.
+> **Status:** M5 in progress: the load test is done, the cost per order follows
+> once the AWS bill shows it. Every number below is measured.
 
-## What it will do
+## What it does
 
 A client places an order through an HTTP API. A saga then reserves stock,
 charges a simulated payment and confirms the order, or undoes the earlier
@@ -150,6 +150,33 @@ Measured with `scripts/e2e_saga.py`, which polls every 0.25 s:
   It was 11 to 21 s until the notification queue's batching window was
   removed (ADR 6).
 
+### Load test
+
+`scripts/load/orders.js` (k6) places signed orders at 5, 10 and 20 a second,
+2 minutes per step; `scripts/load_check.py` then checks every order
+([procedure](docs/load-test.md), [ADR 8](docs/adr/0008-load-test-and-concurrency.md)).
+Run 3, with 4,201 orders:
+
+| | Result |
+|---|---|
+| Orders confirmed | 4,201 of 4,201 |
+| Stock taken | equal to the confirmed quantity, for each of 5 products |
+| Notifications | 4,201, all on the first delivery |
+| Failed saga executions, dead-lettered messages, throttles, 5xx | 0 |
+| API latency p50 / p95 / p99 (k6, client side) | 103 / 171 / 251 ms |
+| Saga duration p50 / p95 / p99 | 365 / 470 / 1,467 ms |
+| Notification p50 / p95 / p99, from `OrderConfirmed` | 0.62 / 1.08 / 1.15 s |
+| Peak concurrent Lambda executions | 17 |
+
+The first run found a bug the unit tests could not: at 20 orders a second,
+two reservations sometimes update the same stock item at once, and DynamoDB
+cancels one with a `TransactionConflict`. The saga treated that as "out of
+stock" and rejected 106 orders with plenty of stock; compensation would have
+skipped releasing stock the same way. Conflicts are now retried (117 in run 3,
+all confirmed). The first two runs also hit the account's limit of 10
+concurrent Lambda executions; after AWS raised it to 1,000, each function got
+its own reserved concurrency and the throttling went away.
+
 ### Alarm notifications
 
 The alarms notify the SNS topic `aedo-dev-alarms`. Subscribe an address by
@@ -173,6 +200,7 @@ tests/unit/         unit tests: the real handler against DynamoDB mocked by moto
 docs/adr/           architecture decision records
 docs/runbook.md     what to do when each alarm fires
 docs/load-test.md   how to run the load test and check the result
+docs/load-results/  output of the three load-test runs in ADR 8
 scripts/            lint, state bootstrap, account apply and destroy
 scripts/load/       k6 load test; see docs/load-test.md
 ```
@@ -235,6 +263,7 @@ only.
 - [ADR 5: Event flow and order saga](docs/adr/0005-event-flow-and-saga.md)
 - [ADR 6: Alarms, dashboard and dead-letter queues](docs/adr/0006-alarms-and-dead-letters.md)
 - [ADR 7: Fault injection and post-deploy tests](docs/adr/0007-fault-injection-and-post-deploy-tests.md)
+- [ADR 8: Load test, stock contention and concurrency](docs/adr/0008-load-test-and-concurrency.md)
 
 ## Licence
 

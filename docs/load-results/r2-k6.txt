@@ -1,0 +1,35 @@
+          /\      |‾‾| /‾‾/   /‾‾/   
+     /\  /  \     |  |/  /   /  /    
+    /  \/    \    |     (   /   ‾‾\  
+   /          \   |  |\  \ |  (‾)  | 
+  / __________ \  |__| \__\ \_____/ .io
+  execution: local
+     script: C:/Users/cms/projects/aws-event-driven-orders/scripts/load/orders.js
+     output: -
+  scenarios: (100.00%) 3 scenarios, 300 max VUs, 6m30s max duration (incl. graceful stop):
+           * step_1_5rps: 5.00 iterations/s for 2m0s (maxVUs: 15-50, gracefulStop: 30s)
+           * step_2_10rps: 10.00 iterations/s for 2m0s (maxVUs: 30-100, startTime: 2m0s, gracefulStop: 30s)
+           * step_3_20rps: 20.00 iterations/s for 2m0s (maxVUs: 60-200, startTime: 4m0s, gracefulStop: 30s)
+     ✗ order created (201)
+      ↳  99% — ✓ 4169 / ✗ 34
+     checks.........................: 99.19% ✓ 4169      ✗ 34  
+     data_received..................: 1.9 MB 5.4 kB/s
+     data_sent......................: 2.8 MB 7.7 kB/s
+     http_req_blocked...............: min=0s      med=0s       p(90)=0s       p(95)=0s       p(99)=115.73ms max=196.29ms
+     http_req_connecting............: min=0s      med=0s       p(90)=0s       p(95)=0s       p(99)=51.39ms  max=122.85ms
+     http_req_duration..............: min=48.82ms med=103.36ms p(90)=130.99ms p(95)=149.45ms p(99)=230.72ms max=642.51ms
+       { expected_response:true }...: min=75.86ms med=103.57ms p(90)=131.16ms p(95)=149.64ms p(99)=230.77ms max=642.51ms
+     ✓ { scenario:step_1_5rps }.....: min=81.62ms med=100.52ms p(90)=125.36ms p(95)=137.69ms p(99)=331.32ms max=536.5ms 
+     ✓ { scenario:step_2_10rps }....: min=76.78ms med=102.96ms p(90)=132.42ms p(95)=153.19ms p(99)=260.63ms max=642.51ms
+     ✓ { scenario:step_3_20rps }....: min=48.82ms med=104.44ms p(90)=131.2ms  p(95)=148.05ms p(99)=202.65ms max=343.78ms
+   ✓ http_req_failed................: 0.80%  ✓ 34        ✗ 4169
+     http_req_receiving.............: min=0s      med=0s       p(90)=977.36µs p(95)=1.01ms   p(99)=3.94ms   max=38.18ms 
+     http_req_sending...............: min=0s      med=0s       p(90)=611.9µs  p(95)=652.29µs p(99)=1.05ms   max=9.9ms   
+     http_req_tls_handshaking.......: min=0s      med=0s       p(90)=0s       p(95)=0s       p(99)=56.78ms  max=108.13ms
+     http_req_waiting...............: min=47.15ms med=102.67ms p(90)=130.38ms p(95)=148.5ms  p(99)=230.48ms max=642.51ms
+     http_reqs......................: 4203   11.668041/s
+     iteration_duration.............: min=49.33ms med=104.81ms p(90)=137.62ms p(95)=170.73ms p(99)=259.67ms max=644.16ms
+     iterations.....................: 4203   11.668041/s
+     orders_failed..................: 34     0.094388/s
+     vus............................: 60     min=15      max=60
+     vus_max........................: 90     min=90      max=90
