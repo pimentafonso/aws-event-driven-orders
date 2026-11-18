@@ -7,6 +7,10 @@ and skipped instead of notifying the customer twice.
 Failures are reported per message (partial batch response): one bad message is
 retried on its own, and after three receives SQS moves it to the dead-letter
 queue, while the rest of the batch succeeds.
+
+Each notification also records when the event was published, when it reached
+the queue and when Lambda first received it, so the time from OrderConfirmed
+to the notification can be split by hop (NotificationLatency metric).
 """
 
 from __future__ import annotations
@@ -49,12 +53,41 @@ def parse(body: str) -> dict[str, str]:
         raise InvalidMessageError("not an OrderConfirmed event") from err
     if event.get("detail-type") != "OrderConfirmed":
         raise InvalidMessageError(f"unexpected detail-type {event.get('detail-type')!r}")
-    return {"order_id": str(order_id), "customer_id": str(customer_id)}
+    return {
+        "order_id": str(order_id),
+        "customer_id": str(customer_id),
+        "event_time": str(event.get("time", "")),
+    }
+
+
+def _ms(value: datetime) -> int:
+    return int(value.timestamp() * 1000)
+
+
+def timings(record: SQSRecord, event_time: str, now: datetime) -> dict[str, int]:
+    """Milliseconds spent on each hop between OrderConfirmed and now.
+
+    EventBridge's event time has one-second resolution, so the first hop
+    (bus to queue) can read up to a second long or short.
+    """
+    sent = int(record.attributes.sent_timestamp)
+    received = int(record.attributes.approximate_first_receive_timestamp)
+    result = {
+        "queue_wait_ms": received - sent,
+        "handler_ms": _ms(now) - received,
+    }
+    if event_time:
+        published = _ms(datetime.fromisoformat(event_time.replace("Z", "+00:00")))
+        result["bus_to_queue_ms"] = sent - published
+        result["total_ms"] = _ms(now) - published
+    return result
 
 
 @tracer.capture_method
 def record_handler(record: SQSRecord) -> None:
     message = parse(record.body)
+    now = datetime.now(UTC)
+    hops = timings(record, message.pop("event_time"), now)
     try:
         table.put_item(
             Item={
@@ -62,8 +95,9 @@ def record_handler(record: SQSRecord) -> None:
                 "sk": "NOTIFICATION",
                 "customer_id": message["customer_id"],
                 "channel": "email (simulated)",
-                "sent_at": datetime.now(UTC).isoformat(timespec="milliseconds"),
+                "sent_at": now.isoformat(timespec="milliseconds"),
                 "message_id": record.message_id,
+                "timings": hops,
             },
             ConditionExpression="attribute_not_exists(pk)",
         )
@@ -73,8 +107,12 @@ def record_handler(record: SQSRecord) -> None:
         logger.info("duplicate delivery skipped", extra=message)
         metrics.add_metric(name="DuplicateNotificationsSkipped", unit=MetricUnit.Count, value=1)
         return
-    logger.info("notification sent", extra=message)
+    logger.info("notification sent", extra={**message, **hops})
     metrics.add_metric(name="NotificationsSent", unit=MetricUnit.Count, value=1)
+    if "total_ms" in hops:
+        metrics.add_metric(
+            name="NotificationLatency", unit=MetricUnit.Milliseconds, value=hops["total_ms"]
+        )
 
 
 @logger.inject_lambda_context
