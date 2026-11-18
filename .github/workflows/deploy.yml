@@ -1,7 +1,8 @@
 name: Deploy dev
 
-# Merging to main applies dev. The account root module (infra/account) is
-# never applied from CI: an administrator runs scripts/account.sh.
+# Merging to main applies dev, then tests it end to end. The account root
+# module (infra/account) is never applied from CI: an administrator runs
+# scripts/account.sh.
 on:
   push:
     branches: [main]
@@ -9,6 +10,9 @@ on:
       - "infra/envs/**"
       - "infra/modules/**"
       - "src/**"
+      - "scripts/smoke_api.py"
+      - "scripts/e2e_saga.py"
+      - "scripts/requirements-e2e.txt"
       - ".github/workflows/deploy.yml"
   workflow_dispatch:
 
@@ -30,6 +34,8 @@ jobs:
     permissions:
       contents: read
       id-token: write
+    outputs:
+      api_endpoint: ${{ steps.outputs.outputs.api_endpoint }}
     env:
       AWS_ACCOUNT_ID: ${{ secrets.AWS_ACCOUNT_ID }}
     steps:
@@ -53,3 +59,43 @@ jobs:
         run: terraform -chdir=infra/envs/dev plan -input=false -no-color -out=tfplan
       - name: Apply
         run: terraform -chdir=infra/envs/dev apply -input=false -no-color tfplan
+      - name: Read outputs
+        id: outputs
+        run: echo "api_endpoint=$(terraform -chdir=infra/envs/dev output -raw api_endpoint)" >> "$GITHUB_OUTPUT"
+
+  test:
+    name: Test dev end to end
+    needs: apply
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    environment: dev
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: scripts/requirements-e2e.txt
+      - run: pip install -r scripts/requirements-e2e.txt
+      # A role that can call the API, read orders and set test stock, and
+      # nothing else; it cannot change infrastructure.
+      - uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        with:
+          role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/aedo-github-dev-test
+          role-session-name: test-dev-${{ github.run_id }}
+          aws-region: eu-west-1
+      - name: Smoke test the API
+        working-directory: scripts
+        run: python smoke_api.py "$API_ENDPOINT"
+        env:
+          API_ENDPOINT: ${{ needs.apply.outputs.api_endpoint }}
+      - name: End-to-end saga test
+        working-directory: scripts
+        run: python e2e_saga.py "$API_ENDPOINT"
+        env:
+          API_ENDPOINT: ${{ needs.apply.outputs.api_endpoint }}
