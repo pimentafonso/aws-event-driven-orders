@@ -46,6 +46,15 @@ class OrderNotFoundError(Exception):
     """The order in the event does not exist."""
 
 
+def _request_token(action: str, order_id: str) -> str:
+    """Idempotency token for a transaction: stable per step and order.
+
+    DynamoDB allows at most 36 characters, so a name-based UUID is used
+    rather than "<action>-<order_id>", which would be 44.
+    """
+    return str(uuid.uuid5(uuid.NAMESPACE_URL, f"aedo:{action}:{order_id}"))
+
+
 def _order_key(order_id: str) -> dict[str, str]:
     return {"pk": f"ORDER#{order_id}", "sk": "ORDER"}
 
@@ -121,7 +130,7 @@ def reserve(order_id: str) -> dict[str, Any]:
                 _order_update(order_id, "RESERVED", "PENDING", None),
                 *(_stock_update(sku, -quantity) for sku, quantity in items),
             ],
-            ClientRequestToken=f"reserve-{order_id}",
+            ClientRequestToken=_request_token("reserve", order_id),
         )
     except ClientError as err:
         if err.response["Error"]["Code"] != "TransactionCanceledException":
@@ -163,7 +172,7 @@ def release(order_id: str, reason: str) -> dict[str, Any]:
                 _order_update(order_id, "REJECTED", "RESERVED", reason),
                 *(_stock_update(sku, quantity) for sku, quantity in items),
             ],
-            ClientRequestToken=f"release-{order_id}",
+            ClientRequestToken=_request_token("release", order_id),
         )
     except ClientError as err:
         if err.response["Error"]["Code"] != "TransactionCanceledException":
