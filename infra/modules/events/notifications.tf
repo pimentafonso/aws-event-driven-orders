@@ -120,6 +120,10 @@ module "notifier" {
     FAULTS_PARAMETER = aws_ssm_parameter.faults.name
   }
   timeout_seconds = local.notifier_timeout_seconds
+  # Above the event source mapping's maximum concurrency, so Lambda never
+  # throttles the poller: a throttled batch goes back to the queue and counts
+  # towards the 3 receives before the dead-letter queue.
+  reserved_concurrency = 10
 }
 
 resource "aws_lambda_event_source_mapping" "notifications" {
@@ -132,9 +136,8 @@ resource "aws_lambda_event_source_mapping" "notifications" {
   maximum_batching_window_in_seconds = 0
   function_response_types            = ["ReportBatchItemFailures"]
 
-  # The account allows 10 concurrent executions in total; keep the consumer
-  # from taking them all.
+  # The poller's own limit; it stays below the function's reserved 10.
   scaling_config {
-    maximum_concurrency = 2
+    maximum_concurrency = 5
   }
 }

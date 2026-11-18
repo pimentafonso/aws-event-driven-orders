@@ -62,7 +62,6 @@ resource "aws_iam_role_policy" "this" {
 }
 
 resource "aws_lambda_function" "this" {
-  #checkov:skip=CKV_AWS_115:The account's concurrency limit is 10 and AWS keeps 10 unreserved, so nothing can be reserved.
   #checkov:skip=CKV_AWS_116:Invoked synchronously by Step Functions or by an SQS event source mapping, which has its own dead-letter queue.
   #checkov:skip=CKV_AWS_117:No VPC resources are used; DynamoDB is reached over its public endpoint with IAM and TLS.
   #checkov:skip=CKV_AWS_173:The environment variables hold resource names only, no secrets.
@@ -77,7 +76,9 @@ resource "aws_lambda_function" "this" {
   source_code_hash = data.archive_file.code.output_base64sha256
   memory_size      = var.memory_mb
   timeout          = var.timeout_seconds
-  layers           = [var.powertools_layer_arn]
+
+  reserved_concurrent_executions = var.reserved_concurrency
+  layers                         = [var.powertools_layer_arn]
 
   environment {
     variables = merge(

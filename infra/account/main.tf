@@ -406,6 +406,8 @@ data "aws_iam_policy_document" "dev_deploy" {
       "lambda:DeleteFunction",
       "lambda:UpdateFunctionCode",
       "lambda:UpdateFunctionConfiguration",
+      "lambda:PutFunctionConcurrency",
+      "lambda:DeleteFunctionConcurrency",
       "lambda:AddPermission",
       "lambda:RemovePermission",
       "lambda:TagResource",

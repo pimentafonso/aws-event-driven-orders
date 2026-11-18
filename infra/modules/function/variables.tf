@@ -61,3 +61,13 @@ variable "log_retention_days" {
   type        = number
   default     = 14
 }
+
+variable "reserved_concurrency" {
+  description = "Executions reserved for the function, which are also its ceiling."
+  type        = number
+
+  validation {
+    condition     = var.reserved_concurrency >= 1
+    error_message = "Reserve at least one execution; 0 would stop the function."
+  }
+}
