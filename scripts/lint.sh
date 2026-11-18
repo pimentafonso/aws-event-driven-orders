@@ -20,9 +20,9 @@ need() {
 
 if need terraform; then
   terraform fmt -check -recursive -diff infra
-  for env in infra/envs/*/; do
-    terraform -chdir="$env" init -backend=false -input=false >/dev/null
-    terraform -chdir="$env" validate
+  for root in infra/account infra/envs/*/; do
+    terraform -chdir="$root" init -backend=false -input=false >/dev/null
+    terraform -chdir="$root" validate
   done
 fi
 
