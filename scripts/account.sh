@@ -15,5 +15,8 @@ case "$action" in
 esac
 
 tf_init account
-terraform -chdir=infra/account "$action" -input=false \
+# apply shows the plan and waits for "yes"; plan never prompts.
+input=false
+if [ "$action" = apply ]; then input=true; fi
+terraform -chdir=infra/account "$action" -input="$input" \
   -var="state_bucket=$(state_bucket)"
