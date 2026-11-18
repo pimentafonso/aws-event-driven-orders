@@ -17,3 +17,8 @@ output "idempotency_table_arn" {
   description = "ARN of the idempotency table."
   value       = aws_dynamodb_table.idempotency.arn
 }
+
+output "orders_stream_arn" {
+  description = "Stream of the orders table."
+  value       = aws_dynamodb_table.orders.stream_arn
+}

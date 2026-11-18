@@ -22,6 +22,10 @@ resource "aws_dynamodb_table" "orders" {
     enabled = true
   }
 
+  # New orders flow to EventBridge through a pipe (modules/events).
+  stream_enabled   = true
+  stream_view_type = "NEW_IMAGE"
+
   deletion_protection_enabled = var.deletion_protection
 }
 
