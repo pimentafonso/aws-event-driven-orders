@@ -41,7 +41,7 @@ steps when one fails. The focus is on the failure paths that tutorials skip:
 | M2 | Synchronous API with idempotency | done |
 | M3 | Event flow and saga | done |
 | M4 | Fault injection, integration tests, observability | done |
-| M5 | Load test, measured cost, final write-up | planned |
+| M5 | Load test, measured cost, final write-up | in progress |
 
 ## The API
 
@@ -121,7 +121,8 @@ The alarms notify the SNS topic `aedo-dev-alarms`. Subscribe an address by
 hand, so it never goes into the repository or the Terraform state:
 
 ```bash
-aws sns subscribe --region eu-west-1 --protocol email --notification-endpoint <address>   --topic-arn "$(terraform -chdir=infra/envs/dev output -raw alarm_topic_arn)"
+account=$(aws sts get-caller-identity --query Account --output text)
+aws sns subscribe --region eu-west-1 --protocol email   --topic-arn "arn:aws:sns:eu-west-1:${account}:aedo-dev-alarms"   --notification-endpoint you@example.org   # replace with your address
 ```
 
 ## Repository layout
@@ -136,7 +137,9 @@ src/notifier/       SQS consumer for OrderConfirmed
 tests/unit/         unit tests: the real handler against DynamoDB mocked by moto
 docs/adr/           architecture decision records
 docs/runbook.md     what to do when each alarm fires
+docs/load-test.md   how to run the load test and check the result
 scripts/            lint, state bootstrap, account apply and destroy
+scripts/load/       k6 load test; see docs/load-test.md
 ```
 
 ## Running the checks locally
