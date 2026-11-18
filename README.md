@@ -2,8 +2,8 @@
 
 Event-driven order processing on AWS serverless, built with Terraform.
 
-> **Status:** M5 in progress: the load test is done, the cost per order follows
-> once the AWS bill shows it. Every number below is measured.
+> **Status:** complete (M0 to M5). Every number below is measured; the cost per
+> order is calculated from measured usage at list prices (ADR 8).
 
 ## What it does
 
@@ -17,8 +17,8 @@ steps when one fails. The focus is on the failure paths that tutorials skip:
   redrive script.
 - **Compensation**: a Step Functions saga that rolls back reserved stock when
   payment fails.
-- **Proof**: fault-injection tests, a load test and the real cost per million
-  orders, taken from the AWS bill.
+- **Proof**: fault-injection tests, a load test, and the cost per million
+  orders calculated from the load test's measured usage.
 
 ## Architecture
 
@@ -76,7 +76,7 @@ errors and Lambda throttles.
 | M2 | Synchronous API with idempotency | done |
 | M3 | Event flow and saga | done |
 | M4 | Fault injection, integration tests, observability | done |
-| M5 | Load test, measured cost, final write-up | in progress |
+| M5 | Load test, measured cost, final write-up | done |
 
 ## The API
 
@@ -177,6 +177,23 @@ all confirmed). The first two runs also hit the account's limit of 10
 concurrent Lambda executions; after AWS raised it to 1,000, each function got
 its own reserved concurrency and the throttling went away.
 
+### Cost
+
+Run 3's measured usage at eu-west-1 list prices comes to **$127 per million
+orders** ($0.000127 an order), before the free tier:
+
+| Service | Per million orders |
+|---|---|
+| Step Functions Standard (4 transitions an order) | $100.70 |
+| CloudWatch Logs ingestion | $12.45 |
+| DynamoDB writes | $7.13 |
+| Everything else (EventBridge, SQS, API Gateway, Lambda, reads, Pipes) | $6.75 |
+
+Step Functions Express would cut the saga's share to about $1.42 and the total
+to about $28, at the cost of the execution history and redrive the runbook
+uses; ADR 8 explains why it stays on Standard at this volume. Idle, the pipe's
+stream polling costs about $4 a month.
+
 ### Alarm notifications
 
 The alarms notify the SNS topic `aedo-dev-alarms`. Subscribe an address by
@@ -201,6 +218,7 @@ docs/adr/           architecture decision records
 docs/runbook.md     what to do when each alarm fires
 docs/load-test.md   how to run the load test and check the result
 docs/load-results/  output of the three load-test runs in ADR 8
+docs/write-up.md    what the load tests found, as a short article
 scripts/            lint, state bootstrap, account apply and destroy
 scripts/load/       k6 load test; see docs/load-test.md
 ```
