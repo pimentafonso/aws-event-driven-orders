@@ -38,3 +38,18 @@ module "events" {
   orders_table_arn  = module.data.orders_table_arn
   orders_stream_arn = module.data.orders_stream_arn
 }
+
+module "observability" {
+  source = "../../modules/observability"
+
+  name_prefix              = local.name_prefix
+  api_id                   = module.api.api_id
+  api_function_name        = module.api.function_name
+  steps_function_name      = module.events.steps_function_name
+  notifier_function_name   = module.events.notifier_function_name
+  state_machine_arn        = module.events.state_machine_arn
+  pipe_name                = module.events.pipe_name
+  notifications_queue_name = module.events.notifications_queue_name
+  notifications_dlq_name   = module.events.notifications_dlq_name
+  events_dlq_name          = module.events.events_dlq_name
+}

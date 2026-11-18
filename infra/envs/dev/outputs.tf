@@ -22,3 +22,18 @@ output "notifications_dlq_url" {
   description = "Notification dead-letter queue."
   value       = module.events.notifications_dlq_url
 }
+
+output "events_dlq_url" {
+  description = "Dead-letter queue for events the pipe or the rules could not deliver."
+  value       = module.events.events_dlq_url
+}
+
+output "alarm_topic_arn" {
+  description = "SNS topic the alarms notify; subscribe an email address to it by hand."
+  value       = module.observability.alarm_topic_arn
+}
+
+output "dashboard_name" {
+  description = "CloudWatch dashboard for the order flow."
+  value       = module.observability.dashboard_name
+}
