@@ -22,40 +22,12 @@ steps when one fails. The focus is on the failure paths that tutorials skip:
 
 ## Architecture
 
-```mermaid
-flowchart LR
-    client(["Client<br/>SigV4-signed"]) -->|"POST /orders<br/>Idempotency-Key"| api["API Gateway<br/>HTTP API, IAM auth"]
-    api --> apifn["Lambda<br/>orders-api"]
-    apifn -->|"PENDING order"| table[("DynamoDB<br/>single table")]
-    table -->|"stream = outbox"| pipe["EventBridge Pipe"]
-    pipe -->|"OrderPlaced"| bus{{"EventBridge<br/>custom bus"}}
-    bus -->|"rule: OrderPlaced"| saga
+![Architecture: a signed client calls the API; the order goes to DynamoDB, through the stream and an EventBridge Pipe to the bus, which starts the Step Functions saga and feeds the notification queue](docs/architecture.svg)
 
-    subgraph saga ["Step Functions saga"]
-        direction TB
-        reserve["Reserve stock"] --> charge["Charge payment"]
-        charge --> confirm["Confirm"]
-        charge -.->|"fails"| release["Release stock<br/>compensation"]
-    end
-
-    saga <-->|"saga-steps Lambda<br/>transactions"| table
-    confirm -->|"OrderConfirmed"| bus
-    bus -->|"rule: OrderConfirmed"| queue[["SQS<br/>notifications"]]
-    queue --> notifier["Lambda<br/>notifier"]
-    notifier -->|"one notification<br/>per order"| table
-    queue -.->|"after 3 receives"| ndlq[["SQS<br/>notifications DLQ"]]
-    pipe -.->|"undeliverable"| edlq[["SQS<br/>events DLQ"]]
-    bus -.->|"undeliverable"| edlq
-
-    faults["SSM Parameter Store<br/>fault switch"] -.-> charge
-    faults -.-> notifier
-    alarms["8 CloudWatch alarms"] --> sns["SNS<br/>email"]
-```
-
-Solid arrows are the order path; dotted arrows are failure paths and the
-fault-injection switch. The alarms watch the dead-letter queues, the
-notification backlog, failed executions, pipe failures, API 5xx, notifier
-errors and Lambda throttles.
+The dashed arrow is the compensation path: stock is released when payment
+fails. Undeliverable events go to dead-letter queues, and eight alarms watch
+the dead-letter queues, the notification backlog, failed executions, pipe
+failures, API 5xx, notifier errors and Lambda throttles.
 
 | Layer | Services |
 |---|---|
