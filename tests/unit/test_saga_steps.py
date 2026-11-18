@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import json
+from pathlib import Path
 from typing import Any
 
 import pytest
+from botocore.exceptions import ClientError
 
 from .conftest import FakeContext, order, put_order, put_stock, stock
 
@@ -133,3 +136,47 @@ def test_request_tokens_fit_dynamodb_limit(steps: Any) -> None:
     assert all(len(t) <= 36 for t in tokens)
     assert len(tokens) == 2
     assert steps._request_token("reserve", order_id) == steps._request_token("reserve", order_id)
+
+
+def lost_race(steps: Any, monkeypatch: pytest.MonkeyPatch, codes: list[str]) -> None:
+    """Make the next transaction fail the way DynamoDB does under contention."""
+    error = ClientError(
+        {
+            "Error": {"Code": "TransactionCanceledException", "Message": "cancelled"},
+            "CancellationReasons": [{"Code": c} for c in codes],
+        },
+        "TransactWriteItems",
+    )
+
+    def fail(**_: Any) -> None:
+        raise error
+
+    monkeypatch.setattr(steps.client, "transact_write_items", fail)
+
+
+def test_reserve_retries_a_conflict_instead_of_rejecting(
+    steps: Any, stocked: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    lost_race(steps, monkeypatch, ["None", "TransactionConflict", "None"])
+
+    with pytest.raises(steps.StockContentionError):
+        run(steps, "reserve")
+    assert order(stocked, "o-1")["status"] == "PENDING"
+
+
+def test_release_retries_a_conflict_instead_of_skipping(
+    steps: Any, stocked: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    run(steps, "reserve")
+    lost_race(steps, monkeypatch, ["None", "None", "TransactionConflict"])
+
+    with pytest.raises(steps.StockContentionError):
+        run(steps, "release", reason="PAYMENT_FAILED")
+    assert order(stocked, "o-1")["status"] == "RESERVED"
+
+
+def test_the_saga_retries_stock_contention() -> None:
+    asl = Path(__file__).parents[2] / "infra" / "modules" / "events" / "saga.asl.json"
+    reserve = json.loads(asl.read_text(encoding="utf-8"))["States"]["ReserveStock"]
+
+    assert any(r["ErrorEquals"] == ["StockContentionError"] for r in reserve["Retry"])
