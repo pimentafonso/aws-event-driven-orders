@@ -103,6 +103,8 @@ def main() -> int:
         failures += not ok
         print(f"{'PASS' if ok else 'FAIL'}  {name}{f' ({detail})' if detail else ''}")
 
+    # SKU-5 gets a small stock so one valid order (quantity <= 100) can exceed it.
+    table.put_item(Item={"pk": "PRODUCT#SKU-5", "sk": "STOCK", "available": 5})
     sku1, sku5 = stock("SKU-1"), stock("SKU-5")
 
     happy_id, t0 = place(endpoint, "e2e", [{"sku": "SKU-1", "quantity": 1}])
