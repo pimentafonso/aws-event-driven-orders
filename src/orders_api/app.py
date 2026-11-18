@@ -56,7 +56,7 @@ def _json_error(status: int, message: str) -> Response:
 
 
 def _to_api(item: dict[str, Any]) -> dict[str, Any]:
-    return {
+    order = {
         "order_id": item["pk"].removeprefix("ORDER#"),
         "status": item["status"],
         "customer_id": item["customer_id"],
@@ -64,6 +64,10 @@ def _to_api(item: dict[str, Any]) -> dict[str, Any]:
         "items": [{"sku": i["sku"], "quantity": int(i["quantity"])} for i in item["items"]],
         "created_at": item["created_at"],
     }
+    # Set by the saga when it rejects an order (OUT_OF_STOCK, PAYMENT_DECLINED...).
+    if "reason" in item:
+        order["reason"] = item["reason"]
+    return order
 
 
 @idempotent_function(
@@ -74,9 +78,12 @@ def _to_api(item: dict[str, Any]) -> dict[str, Any]:
 def create_order(request: dict[str, Any]) -> dict[str, Any]:
     """Store a new order. Runs once per Idempotency-Key; replays get the same result."""
     order = request["order"]
+    order_id = str(uuid.uuid4())
     item = {
-        "pk": f"ORDER#{uuid.uuid4()}",
+        "pk": f"ORDER#{order_id}",
         "sk": "ORDER",
+        # Stored on its own too, so the stream event carries it as-is.
+        "order_id": order_id,
         "status": "PENDING",
         "customer_id": order["customer_id"],
         "items": order["items"],
