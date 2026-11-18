@@ -102,3 +102,53 @@ def call(app: Any, event: dict[str, Any]) -> tuple[int, dict[str, Any], dict[str
     response = app.lambda_handler(event, FakeContext())
     body = json.loads(response["body"]) if response.get("body") else {}
     return response["statusCode"], body, response.get("headers", {})
+
+
+def fresh_import(name: str) -> Any:
+    """Import a handler module inside the moto mock, discarding any earlier copy."""
+    sys.modules.pop(name, None)
+    return importlib.import_module(name)
+
+
+@pytest.fixture
+def steps(tables: Any) -> Any:
+    return fresh_import("saga.steps")
+
+
+@pytest.fixture
+def notifier(tables: Any) -> Any:
+    return fresh_import("notifier.handler")
+
+
+def put_stock(tables: Any, sku: str, available: int) -> None:
+    tables["orders"].put_item(Item={"pk": f"PRODUCT#{sku}", "sk": "STOCK", "available": available})
+
+
+def stock(tables: Any, sku: str) -> int:
+    return int(
+        tables["orders"].get_item(Key={"pk": f"PRODUCT#{sku}", "sk": "STOCK"})["Item"]["available"]
+    )
+
+
+def put_order(
+    tables: Any,
+    order_id: str,
+    items: list[dict[str, Any]],
+    customer_id: str = "c-1",
+    status: str = "PENDING",
+) -> None:
+    tables["orders"].put_item(
+        Item={
+            "pk": f"ORDER#{order_id}",
+            "sk": "ORDER",
+            "order_id": order_id,
+            "customer_id": customer_id,
+            "status": status,
+            "items": items,
+            "created_at": "2026-11-18T00:00:00.000+00:00",
+        }
+    )
+
+
+def order(tables: Any, order_id: str) -> dict[str, Any]:
+    return tables["orders"].get_item(Key={"pk": f"ORDER#{order_id}", "sk": "ORDER"})["Item"]
