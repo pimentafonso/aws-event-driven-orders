@@ -118,10 +118,13 @@ module "notifier" {
 }
 
 resource "aws_lambda_event_source_mapping" "notifications" {
-  event_source_arn                   = aws_sqs_queue.notifications.arn
-  function_name                      = module.notifier.arn
-  batch_size                         = 10
-  maximum_batching_window_in_seconds = 1
+  event_source_arn = aws_sqs_queue.notifications.arn
+  function_name    = module.notifier.arn
+  batch_size       = 10
+  # No batching window: with one set, measured notifications waited 11-21 s
+  # between Lambda's poller taking the message and the handler running
+  # (ADR 6). Without it, 40-55 ms.
+  maximum_batching_window_in_seconds = 0
   function_response_types            = ["ReportBatchItemFailures"]
 
   # The account allows 10 concurrent executions in total; keep the consumer

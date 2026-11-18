@@ -56,6 +56,25 @@ when Lambda first received it. Only the total is a custom metric
 (`NotificationLatency`), which brings the project to 8 of the 10 free custom
 metrics; the per-hop split is in the log line and on the stored notification.
 
+## Finding: the 20-second notification delay
+
+In M3, notifications arrived about 20 seconds after the order was confirmed.
+The per-hop timings showed where: the event reached the queue in under a
+second and Lambda's poller took it within 10 ms, but the handler only ran
+11 to 21 seconds later. The queue's event source mapping had a 1-second
+batching window. Measured with `scripts/e2e_saga.py`, three warm runs each:
+
+| Batching window | Total after `OrderConfirmed` | Poller to handler |
+|---|---|---|
+| 1 second | 21.0 s, 21.3 s, 11.4 s | 20.8 s, 20.3 s, 11.0 s |
+| none (0) | 0.77 s, 0.54 s, 0.74 s | 54 ms, 55 ms, 40 ms |
+
+So with a window set, the poller held a received message much longer than
+the window itself, up to the 20-second long poll. The window is now 0. It
+only helps when traffic is high enough to fill bigger batches, which a
+batch size of 10 does not need. The total includes up to a second of error
+from the event's one-second timestamp.
+
 ## Consequences
 
 - An event that cannot be delivered is kept for 14 days and raises an alarm.
