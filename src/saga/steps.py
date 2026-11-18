@@ -10,6 +10,8 @@ Errors that the state machine handles by name:
     PaymentDeclinedError              the simulated payment provider said no
     PaymentProviderUnavailableError   the provider did not answer (injected
                                       fault, see faults.py); retried
+    StockContentionError              another transaction held a stock item;
+                                      retried
 """
 
 from __future__ import annotations
@@ -48,6 +50,10 @@ class PaymentDeclinedError(Exception):
 
 class PaymentProviderUnavailableError(Exception):
     """The simulated payment provider did not answer; worth retrying."""
+
+
+class StockContentionError(Exception):
+    """DynamoDB cancelled a stock transaction because of a concurrent one; worth retrying."""
 
 
 class OrderNotFoundError(Exception):
@@ -120,9 +126,17 @@ def _stock_update(sku: str, delta: int) -> dict:
     return {"Update": update}
 
 
+# Cancellation reasons that say nothing about the data, only that the
+# transaction lost a race or was throttled: try again.
+_TRANSIENT = {"TransactionConflict", "ThrottlingError", "ProvisionedThroughputExceeded"}
+
+
 def _cancellation_codes(err: ClientError) -> list[str]:
     reasons = err.response.get("CancellationReasons", [])
-    return [r.get("Code", "None") for r in reasons]
+    codes = [r.get("Code", "None") for r in reasons]
+    if _TRANSIENT.intersection(codes):
+        raise StockContentionError(", ".join(sorted(_TRANSIENT.intersection(codes)))) from err
+    return codes
 
 
 def reserve(order_id: str) -> dict[str, Any]:
@@ -147,8 +161,14 @@ def reserve(order_id: str) -> dict[str, Any]:
         if codes and codes[0] == "ConditionalCheckFailed":
             # Another execution moved the order on first; nothing to do.
             return _result(_load(order_id))
-        short = [sku for (sku, _), code in zip(items, codes[1:], strict=False) if code != "None"]
-        raise OutOfStockError(f"not enough stock for {', '.join(short) or 'some items'}") from err
+        short = [
+            sku
+            for (sku, _), code in zip(items, codes[1:], strict=False)
+            if code == "ConditionalCheckFailed"
+        ]
+        if not short:
+            raise
+        raise OutOfStockError(f"not enough stock for {', '.join(short)}") from err
 
     metrics.add_metric(name="StockReserved", unit=MetricUnit.Count, value=1)
     return _result({**order, "status": "RESERVED"})
@@ -187,7 +207,8 @@ def release(order_id: str, reason: str) -> dict[str, Any]:
     except ClientError as err:
         if err.response["Error"]["Code"] != "TransactionCanceledException":
             raise
-        return _result(_load(order_id))
+        _cancellation_codes(err)  # raises StockContentionError on a lost race
+        return _result(_load(order_id))  # the order had already moved on
     metrics.add_metric(name="StockReleased", unit=MetricUnit.Count, value=1)
     return _result({**order, "status": "REJECTED"})
 
