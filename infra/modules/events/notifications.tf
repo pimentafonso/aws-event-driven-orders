@@ -84,6 +84,8 @@ resource "aws_cloudwatch_event_target" "notifications" {
 # Consumer
 # -----------------------------------------------------------------------------
 data "aws_iam_policy_document" "notifier" {
+  source_policy_documents = [data.aws_iam_policy_document.read_faults.json]
+
   statement {
     sid       = "RecordNotifications"
     actions   = ["dynamodb:PutItem"]
@@ -113,8 +115,11 @@ module "notifier" {
   powertools_layer_arn     = var.powertools_layer_arn
   permissions_boundary_arn = var.permissions_boundary_arn
   policy_json              = data.aws_iam_policy_document.notifier.json
-  environment              = { ORDERS_TABLE = var.orders_table_name }
-  timeout_seconds          = local.notifier_timeout_seconds
+  environment = {
+    ORDERS_TABLE     = var.orders_table_name
+    FAULTS_PARAMETER = aws_ssm_parameter.faults.name
+  }
+  timeout_seconds = local.notifier_timeout_seconds
 }
 
 resource "aws_lambda_event_source_mapping" "notifications" {

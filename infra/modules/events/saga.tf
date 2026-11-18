@@ -1,6 +1,8 @@
 # Saga: OrderPlaced -> Step Functions (standard) -> saga steps Lambda.
 
 data "aws_iam_policy_document" "steps" {
+  source_policy_documents = [data.aws_iam_policy_document.read_faults.json]
+
   statement {
     sid       = "Orders"
     actions   = ["dynamodb:GetItem", "dynamodb:UpdateItem", "dynamodb:ConditionCheckItem"]
@@ -19,7 +21,10 @@ module "steps" {
   powertools_layer_arn     = var.powertools_layer_arn
   permissions_boundary_arn = var.permissions_boundary_arn
   policy_json              = data.aws_iam_policy_document.steps.json
-  environment              = { ORDERS_TABLE = var.orders_table_name }
+  environment = {
+    ORDERS_TABLE     = var.orders_table_name
+    FAULTS_PARAMETER = aws_ssm_parameter.faults.name
+  }
 }
 
 # -----------------------------------------------------------------------------
