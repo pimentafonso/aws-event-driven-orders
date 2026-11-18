@@ -122,3 +122,14 @@ def test_unknown_order_fails(steps: Any, tables: Any) -> None:
 def test_unknown_action_fails(steps: Any, stocked: Any) -> None:
     with pytest.raises(ValueError, match="unknown action"):
         run(steps, "refund")
+
+
+def test_request_tokens_fit_dynamodb_limit(steps: Any) -> None:
+    # DynamoDB rejects ClientRequestToken values longer than 36 characters;
+    # moto does not check this, so the limit is tested here.
+    order_id = "a3a32f68-4b5c-4b82-9923-ced95f2b9993"
+    tokens = {steps._request_token(a, order_id) for a in ("reserve", "release")}
+
+    assert all(len(t) <= 36 for t in tokens)
+    assert len(tokens) == 2
+    assert steps._request_token("reserve", order_id) == steps._request_token("reserve", order_id)
