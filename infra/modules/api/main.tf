@@ -98,7 +98,6 @@ resource "aws_iam_role_policy" "function" {
 # Function
 # -----------------------------------------------------------------------------
 resource "aws_lambda_function" "api" {
-  #checkov:skip=CKV_AWS_115:The account's concurrency limit is 10 and AWS keeps 10 unreserved, so nothing can be reserved; the API stage throttle caps load instead.
   #checkov:skip=CKV_AWS_116:Synchronous API: errors go back to the caller, so a dead-letter queue would never receive anything.
   #checkov:skip=CKV_AWS_117:No VPC resources are used; DynamoDB is reached over its public endpoint with IAM and TLS.
   #checkov:skip=CKV_AWS_173:The environment variables hold table names only, no secrets.
@@ -113,7 +112,11 @@ resource "aws_lambda_function" "api" {
   source_code_hash = data.archive_file.code.output_base64sha256
   memory_size      = var.memory_mb
   timeout          = 10
-  layers           = [var.powertools_layer_arn]
+
+  # At most 50 at once, so a burst on the API cannot take the executions the
+  # saga and the notifier need. The stage throttle (25 rps) is the first limit.
+  reserved_concurrent_executions = var.reserved_concurrency
+  layers                         = [var.powertools_layer_arn]
 
   environment {
     variables = {

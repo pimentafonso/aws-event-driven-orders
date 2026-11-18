@@ -21,6 +21,9 @@ module "steps" {
   powertools_layer_arn     = var.powertools_layer_arn
   permissions_boundary_arn = var.permissions_boundary_arn
   policy_json              = data.aws_iam_policy_document.steps.json
+  # Each order runs 3 or 4 short steps; 50 is far above what the load test
+  # needs, while keeping a runaway saga from taking the account's executions.
+  reserved_concurrency = 50
   environment = {
     ORDERS_TABLE     = var.orders_table_name
     FAULTS_PARAMETER = aws_ssm_parameter.faults.name
