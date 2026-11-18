@@ -117,6 +117,23 @@ data "aws_iam_policy_document" "workload_boundary" {
     actions   = ["lambda:InvokeFunction"]
     resources = ["arn:${local.partition}:lambda:${local.region}:${local.account_id}:function:${var.prefix}-*"]
   }
+
+  statement {
+    sid = "StateMachineLogDelivery"
+    # Step Functions logging goes through CloudWatch log delivery, whose
+    # actions do not support resource-level permissions.
+    actions = [
+      "logs:CreateLogDelivery",
+      "logs:GetLogDelivery",
+      "logs:UpdateLogDelivery",
+      "logs:DeleteLogDelivery",
+      "logs:ListLogDeliveries",
+      "logs:PutResourcePolicy",
+      "logs:DescribeResourcePolicies",
+      "logs:DescribeLogGroups",
+    ]
+    resources = ["*"]
+  }
 }
 
 resource "aws_iam_policy" "workload_boundary" {
@@ -377,7 +394,11 @@ data "aws_iam_policy_document" "dev_deploy" {
       "lambda:TagResource",
       "lambda:UntagResource",
     ]
-    resources = ["arn:${local.partition}:lambda:${local.region}:${local.account_id}:function:${var.prefix}-dev-*"]
+    resources = [
+      "arn:${local.partition}:lambda:${local.region}:${local.account_id}:function:${var.prefix}-dev-*",
+      # Default tags reach event source mappings too (M3).
+      "arn:${local.partition}:lambda:${local.region}:${local.account_id}:event-source-mapping:*",
+    ]
   }
 
   statement {
@@ -421,6 +442,7 @@ data "aws_iam_policy_document" "dev_deploy" {
     resources = [
       "arn:${local.partition}:logs:${local.region}:${local.account_id}:log-group:/aws/lambda/${var.prefix}-dev-*",
       "arn:${local.partition}:logs:${local.region}:${local.account_id}:log-group:/aedo/${var.prefix}-dev/*",
+      "arn:${local.partition}:logs:${local.region}:${local.account_id}:log-group:/aws/vendedlogs/states/${var.prefix}-dev-*",
     ]
   }
 
@@ -439,6 +461,83 @@ data "aws_iam_policy_document" "dev_deploy" {
       "logs:DescribeLogGroups",
     ]
     resources = ["*"]
+  }
+
+  # --- M3: event flow (EventBridge, Pipes, Step Functions, SQS) -------------
+
+  statement {
+    sid = "DevEventBusAndRules"
+    actions = [
+      "events:CreateEventBus",
+      "events:UpdateEventBus",
+      "events:DeleteEventBus",
+      "events:PutRule",
+      "events:DeleteRule",
+      "events:EnableRule",
+      "events:DisableRule",
+      "events:PutTargets",
+      "events:RemoveTargets",
+      "events:TagResource",
+      "events:UntagResource",
+    ]
+    resources = [
+      "arn:${local.partition}:events:${local.region}:${local.account_id}:event-bus/${var.prefix}-dev-*",
+      "arn:${local.partition}:events:${local.region}:${local.account_id}:rule/${var.prefix}-dev-*/*",
+    ]
+  }
+
+  statement {
+    sid = "DevPipes"
+    actions = [
+      "pipes:CreatePipe",
+      "pipes:UpdatePipe",
+      "pipes:DeletePipe",
+      "pipes:StartPipe",
+      "pipes:StopPipe",
+      "pipes:TagResource",
+      "pipes:UntagResource",
+    ]
+    resources = ["arn:${local.partition}:pipes:${local.region}:${local.account_id}:pipe/${var.prefix}-dev-*"]
+  }
+
+  statement {
+    sid = "DevStateMachines"
+    actions = [
+      "states:CreateStateMachine",
+      "states:UpdateStateMachine",
+      "states:DeleteStateMachine",
+      "states:TagResource",
+      "states:UntagResource",
+    ]
+    resources = ["arn:${local.partition}:states:${local.region}:${local.account_id}:stateMachine:${var.prefix}-dev-*"]
+  }
+
+  statement {
+    sid = "DevQueues"
+    actions = [
+      "sqs:CreateQueue",
+      "sqs:DeleteQueue",
+      "sqs:SetQueueAttributes",
+      "sqs:TagQueue",
+      "sqs:UntagQueue",
+    ]
+    resources = ["arn:${local.partition}:sqs:${local.region}:${local.account_id}:${var.prefix}-dev-*"]
+  }
+
+  statement {
+    sid = "DevEventSourceMappings"
+    actions = [
+      "lambda:CreateEventSourceMapping",
+      "lambda:UpdateEventSourceMapping",
+      "lambda:DeleteEventSourceMapping",
+    ]
+    # Mapping ARNs are random IDs; the condition pins them to dev functions.
+    resources = ["*"]
+    condition {
+      test     = "ArnLike"
+      variable = "lambda:FunctionArn"
+      values   = ["arn:${local.partition}:lambda:${local.region}:${local.account_id}:function:${var.prefix}-dev-*"]
+    }
   }
 
   statement {
