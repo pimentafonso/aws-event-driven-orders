@@ -13,3 +13,10 @@ select = ["E", "F", "W", "I", "B", "UP", "S", "SIM", "RUF"]
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = ["S101"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
+addopts = "-q"
+# GET requests publish no business metric; Powertools warns about that.
+filterwarnings = ["ignore:No application metrics to publish:UserWarning"]
