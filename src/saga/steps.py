@@ -5,9 +5,11 @@ reason. Every step is idempotent: events are delivered at least once, so the
 same order can start two executions, and Step Functions retries failed tasks.
 Each step checks the current status and does nothing if it already ran.
 
-Errors that the state machine catches by name:
-    OutOfStockError       not enough stock for at least one item
-    PaymentDeclinedError  the simulated payment provider said no
+Errors that the state machine handles by name:
+    OutOfStockError                   not enough stock for at least one item
+    PaymentDeclinedError              the simulated payment provider said no
+    PaymentProviderUnavailableError   the provider did not answer (injected
+                                      fault, see faults.py); retried
 """
 
 from __future__ import annotations
@@ -21,6 +23,8 @@ from aws_lambda_powertools import Logger, Metrics, Tracer
 from aws_lambda_powertools.metrics import MetricUnit
 from aws_lambda_powertools.utilities.typing import LambdaContext
 from botocore.exceptions import ClientError
+
+import faults
 
 logger = Logger()
 tracer = Tracer()
@@ -40,6 +44,10 @@ class OutOfStockError(Exception):
 
 class PaymentDeclinedError(Exception):
     """The simulated payment was declined."""
+
+
+class PaymentProviderUnavailableError(Exception):
+    """The simulated payment provider did not answer; worth retrying."""
 
 
 class OrderNotFoundError(Exception):
@@ -150,6 +158,8 @@ def charge(order_id: str) -> dict[str, Any]:
     order = _load(order_id)
     if order["status"] not in ("RESERVED", "CONFIRMED"):
         raise ValueError(f"cannot charge an order in status {order['status']}")
+    if faults.should_fail(faults.PAYMENT_UNAVAILABLE):
+        raise PaymentProviderUnavailableError("payment provider did not answer (injected)")
     if order["customer_id"].startswith(DECLINED_PREFIX):
         metrics.add_metric(name="PaymentsDeclined", unit=MetricUnit.Count, value=1)
         raise PaymentDeclinedError(f"payment declined for customer {order['customer_id']}")

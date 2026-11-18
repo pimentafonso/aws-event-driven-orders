@@ -3,6 +3,11 @@ output "event_bus_name" {
   value       = aws_cloudwatch_event_bus.orders.name
 }
 
+output "faults_parameter_name" {
+  description = "Fault injection switch."
+  value       = aws_ssm_parameter.faults.name
+}
+
 output "state_machine_arn" {
   description = "Order saga state machine."
   value       = aws_sfn_state_machine.saga.arn

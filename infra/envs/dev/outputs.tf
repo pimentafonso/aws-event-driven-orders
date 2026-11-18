@@ -23,6 +23,11 @@ output "notifications_dlq_url" {
   value       = module.events.notifications_dlq_url
 }
 
+output "faults_parameter_name" {
+  description = "Fault injection switch (scripts/fault_experiment.py)."
+  value       = module.events.faults_parameter_name
+}
+
 output "events_dlq_url" {
   description = "Dead-letter queue for events the pipe or the rules could not deliver."
   value       = module.events.events_dlq_url
