@@ -1,0 +1,7 @@
+# Local development and CI tests. The Lambda runtime gets Powertools from the
+# AWS-managed layer (same version, pinned in infra/envs/dev) and boto3 from the
+# runtime itself, so nothing here is packaged into the function.
+aws-lambda-powertools[tracer]==3.40.0
+boto3==1.44.5
+moto[dynamodb]==5.2.5
+pytest==9.2.0

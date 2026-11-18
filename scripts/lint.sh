@@ -19,6 +19,9 @@ need() {
 }
 
 if need terraform; then
+  # A separate data directory, so linting never reuses (or needs credentials
+  # for) a real backend set up by the deploy scripts.
+  export TF_DATA_DIR=.terraform-lint
   terraform fmt -check -recursive -diff infra
   for root in infra/account infra/envs/*/; do
     terraform -chdir="$root" init -backend=false -input=false >/dev/null

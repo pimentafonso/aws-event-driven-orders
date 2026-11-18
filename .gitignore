@@ -46,3 +46,7 @@ Thumbs.db
 
 # Assistant tooling
 .claude/
+
+# Lambda packages built by Terraform
+.build/
+.terraform-lint/
