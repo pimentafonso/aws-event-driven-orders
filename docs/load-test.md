@@ -14,10 +14,11 @@ that every order ended correctly. Two scripts do the work:
   transitions above the free 4,000 a month. Each order takes 4 to 5
   transitions, so 10,000 orders cost about $1 to $1.25. Lambda, DynamoDB, SQS,
   EventBridge and API Gateway add cents at this volume.
-- **Check the account's Lambda concurrency.** Until the quota increase is
-  granted the account has 10 concurrent executions, shared by every function,
-  and the higher steps will be throttled. The run measures that too, but say
-  which limit applied when you report the numbers.
+- **Check the account's Lambda concurrency** with
+  `aws lambda get-account-settings`. The functions reserve 110 executions
+  (ADR 8), so the account needs a limit above 210; the default of 1,000 is
+  enough. Runs 1 and 2 in ADR 8 were made with a limit of 10, before the
+  reservations, and were throttled.
 - **Don't deploy during a run.** The post-deploy tests reset the stock of
   SKU-1 and SKU-5, which would break the stock check.
 

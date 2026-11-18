@@ -1,0 +1,37 @@
+{
+  "run_id": "r2",
+  "orders": 4169,
+  "statuses": {
+    "CONFIRMED": 4169
+  },
+  "window_seconds": 360,
+  "notification_total_ms": {
+    "p50": 687,
+    "p95": 2203,
+    "p99": 4051,
+    "max": 10100
+  },
+  "notification_receive_counts": {
+    "1": 4169
+  },
+  "cloudwatch": {
+    "saga_duration_ms_p50": 365.1,
+    "api_latency_ms_p50": 52.4,
+    "saga_duration_ms_p95": 480.4,
+    "api_latency_ms_p95": 73.9,
+    "saga_duration_ms_p99": 1494.8,
+    "api_latency_ms_p99": 83.0,
+    "saga_duration_ms_maximum": 2556.0,
+    "api_latency_ms_maximum": 326.0,
+    "saga_executions_started": 4169.0,
+    "saga_execution_throttled": 0.0,
+    "api_requests": 4203.0,
+    "api_4xx": 0.0,
+    "api_5xx": 34.0,
+    "lambda_throttles": 158.0,
+    "lambda_errors": 110.0,
+    "lambda_peak_concurrency": 10.0,
+    "notifications_oldest_message_s_max": 4.0,
+    "pipe_failures": 0.0
+  }
+}

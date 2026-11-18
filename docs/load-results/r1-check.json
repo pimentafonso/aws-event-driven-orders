@@ -1,0 +1,38 @@
+{
+  "run_id": "r1",
+  "orders": 4172,
+  "statuses": {
+    "REJECTED (OUT_OF_STOCK)": 106,
+    "CONFIRMED": 4066
+  },
+  "window_seconds": 359,
+  "notification_total_ms": {
+    "p50": 719,
+    "p95": 2343,
+    "p99": 3984,
+    "max": 6453
+  },
+  "notification_receive_counts": {
+    "1": 4066
+  },
+  "cloudwatch": {
+    "saga_duration_ms_p50": 361.9,
+    "api_latency_ms_p50": 51.7,
+    "saga_duration_ms_p95": 454.2,
+    "api_latency_ms_p95": 71.5,
+    "saga_duration_ms_p99": 1455.0,
+    "api_latency_ms_p99": 84.1,
+    "saga_duration_ms_maximum": 3022.0,
+    "api_latency_ms_maximum": 1404.0,
+    "saga_executions_started": 4172.0,
+    "saga_execution_throttled": 0.0,
+    "api_requests": 4203.0,
+    "api_4xx": 0.0,
+    "api_5xx": 31.0,
+    "lambda_throttles": 155.0,
+    "lambda_errors": 106.0,
+    "lambda_peak_concurrency": 10.0,
+    "notifications_oldest_message_s_max": 0.0,
+    "pipe_failures": 0.0
+  }
+}
