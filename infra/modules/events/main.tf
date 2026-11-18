@@ -119,6 +119,10 @@ resource "aws_pipes_pipe" "orders" {
       batch_size                         = 10
       maximum_batching_window_in_seconds = 0
       maximum_retry_attempts             = 5
+      # Must be set explicitly: on update the provider otherwise sends 0,
+      # which the API rejects. -1 keeps a record until the stream expires it
+      # (24 hours); the retry limit above ends retries well before that.
+      maximum_record_age_in_seconds = -1
 
       # After the retries, the record goes to the dead-letter queue instead
       # of blocking the shard until it expires from the stream.
