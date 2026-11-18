@@ -11,9 +11,9 @@ that every order ended correctly. Two scripts do the work:
 ## Before a run
 
 - **Check the cost.** Step Functions Standard charges $0.025 per 1,000 state
-  transitions above the free 4,000 a month. Each order takes 4 to 5
-  transitions, so 10,000 orders cost about $1 to $1.25. Lambda, DynamoDB, SQS,
-  EventBridge and API Gateway add cents at this volume.
+  transitions above the free 4,000 a month. Each order takes 4 transitions,
+  so a 4,200-order run costs about $0.42 in Step Functions and about $0.53 in
+  all ([ADR 8](adr/0008-load-test-and-concurrency.md#cost)).
 - **Check the account's Lambda concurrency** with
   `aws lambda get-account-settings`. The functions reserve 110 executions
   (ADR 8), so the account needs a limit above 210; the default of 1,000 is
@@ -74,9 +74,12 @@ CloudWatch publishes these one to three minutes late, so the check waits until
 
 ## Cost per order
 
-The bill shows a day's usage 24 to 48 hours later. Read it in Cost Explorer,
-grouped by service, for the day of the run, subtract the same services' cost
-on a quiet day, and divide by the number of orders.
+ADR 8 calculates it from the run's usage: Lambda invocations and duration,
+DynamoDB capacity consumed, API requests, SQS messages, log bytes ingested
+(all from CloudWatch), and state transitions counted from execution
+histories, each at the eu-west-1 list price. To check it against the bill,
+open Cost Explorer 24 to 48 hours after the run, group by usage type for the
+day of the run, and subtract a quiet day.
 
 ## Trial run
 

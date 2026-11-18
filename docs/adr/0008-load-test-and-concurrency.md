@@ -115,9 +115,56 @@ every cap.
 
 ## Cost
 
-To follow: the AWS bill shows a day's usage 24 to 48 hours later. This section
-will give the measured cost per order, by service, for the 12,600-odd orders
-of these runs.
+Calculated from run 3's measured usage (4,201 orders, 16:18 to 16:30 UTC)
+at the eu-west-1 list prices from the AWS Price List API, scaled to a million
+orders. The free tier is left out, because it would cover most of a run this
+size and none of a million orders.
+
+| Service | Measured in run 3 | Per million orders | Share |
+|---|---|---|---|
+| Step Functions Standard | 4 state transitions per order, plus 117 retries | $100.70 | 79% |
+| CloudWatch Logs ingestion | 98.5 MB, 74% of it the saga's execution log | $12.45 | 10% |
+| DynamoDB writes | 42,483 write units (transactions cost double) | $7.13 | 6% |
+| EventBridge custom events | 2 per order (`OrderPlaced`, `OrderConfirmed`) | $2.00 | 2% |
+| SQS requests | at most 3 per order, plus 558 empty receives | $1.25 | 1% |
+| API Gateway HTTP API | 1 request per order | $1.11 | 1% |
+| Lambda requests | 21,069 invocations, 5 per order | $1.00 | 1% |
+| Lambda duration | 676 s at 256 MB, arm64 | $0.54 | <1% |
+| DynamoDB reads | 13,443 read units | $0.45 | <1% |
+| EventBridge Pipes | 1 event per order after the filter | $0.40 | <1% |
+| **Total** | | **$127.03** | |
+
+That is $0.000127 per order, and about $0.53 for run 3. Not included: X-Ray
+traces (sampled; not measured), log storage, and the fixed monthly cost of
+metrics, alarms and the dashboard, which the free tier covers here. The SQS
+figure is an upper bound, because CloudWatch counts messages, not the batched
+calls that are billed. The figures will be checked against the bill once it
+shows 18 November.
+
+**Step Functions Standard is four fifths of the cost.** It bills each state
+transition, $25 per million, and every order makes 4. Express workflows bill
+by request and duration instead: $1 per million requests, and the saga's
+average of 392 ms would cost about $0.42 per million at the minimum 64 MB.
+The saga on Express would cost about $1.42 per million instead of $100.70,
+bringing the total to about $28. It stays on Standard: at this project's
+volume the free tier's 4,000 transitions a month cover about 1,000 orders,
+and Standard gives what the runbook and the fault experiment rely on, which
+Express does not: execution history kept by the service, and redriving a
+failed execution from the failed step. Because every step is already
+idempotent, Express's at-least-once starts would be safe, so the switch is a
+volume decision, not a design one.
+
+**The saga's execution log is the second-largest cost.** It logs every state
+with its input and output, about 17 KB per order, which duplicates the
+execution history that Standard keeps anyway. Logging only errors would save
+about $9 per million orders.
+
+**The pipe costs money while idle.** It polls the table's stream 8 times a
+second whether or not orders arrive: 28,790 `GetRecords` calls an hour,
+measured overnight with no traffic. That is about 21 million stream reads a
+month; above the free 2.5 million they cost $0.226 per million, about $4.18 a
+month for one shard. A Lambda function reading the stream would read it free,
+but would put back the code the pipe replaced.
 
 ## Consequences
 
